@@ -1,0 +1,275 @@
+/*  使用Arduino Uno板、LCD I2C模組、DHT11溫溼度感測器模組、紅外線接收器、RGB LED模組、遙控器其中三個按鈕
+ *  腳位接法：
+ *  LCD I2C模組： GND -> A2    VCC -> A3    SDA -> A4    SCL -> A5
+ *  DHT11模組： ＋ -> 10    out -> 9    － ->8
+ *  紅外線接收器： Vout -> 13    GND -> 12    VCC -> 11
+ *  RGB LED模組：  R -> 6    G -> 5    B -> 4    － -> 3
+ */
+
+#include <IRremote.h>   //irremote
+#define Irrvcc 11
+#define Irrgnd 12
+#define irrcode 2690599860    //遙控器紅外線數值1
+#define key_led 1086278580    //遙控器紅外線數值2
+#define key_lcd 3225373620    //遙控器紅外線數值3
+decode_results results;
+IRrecv irrecv(13);
+#include <dht11.h>  //DHT11
+#define DHTvcc 10
+#define DHTgnd 8
+#define DHT11PIN 9
+#define dht11RefreshTime 2000
+dht11 DHT11;
+#define LEDR 6   //RGB LED
+#define LEDG 5
+#define LEDB 3
+#define LEDgnd 2
+#include <Wire.h>   //LCD
+#include <LiquidCrystal_I2C.h>
+#include <avr/wdt.h>
+#include "watchdogHandler.h"
+LiquidCrystal_I2C lcd(0x3F, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
+int hum = 0, tem = 0, r = 0, g = 0, b = 0;
+volatile boolean onoff = 0;
+boolean LCDbegin = 0;
+boolean LCDlight = 1;
+boolean LEDlight = 1;
+void LEDturnoff() {  //LED turn off
+  digitalWrite(LEDR, LOW);
+  digitalWrite(LEDG, LOW);
+  digitalWrite(LEDB, LOW);
+}
+void LEDturnon() {  //LED turn on   定義LED在不同濕度下的RGB顏色
+  switch (hum) {
+    case 100: analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 127);   break;
+    case 99: analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 117);   break;
+    case 98: analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 107);   break;
+    case 97: analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 97);   break;
+    case 96: analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 87);   break;
+    case 95:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 77);   break;
+    case 94:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 67);   break;
+    case 93:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 57);   break;
+    case 92:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 47);   break;
+    case 91:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 37);   break;
+    case 90:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 27);   break;
+    case 89:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 18);   break;
+    case 88:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 9);   break;
+    case 87:  analogWrite(LEDR, 255); analogWrite(LEDG, 0); analogWrite(LEDB, 0);   break;
+    case 86:  analogWrite(LEDR, 255); analogWrite(LEDG, 8); analogWrite(LEDB, 0);   break;
+    case 85:  analogWrite(LEDR, 255); analogWrite(LEDG, 16); analogWrite(LEDB, 0);   break;
+    case 84:  analogWrite(LEDR, 255); analogWrite(LEDG, 24); analogWrite(LEDB, 0);   break;
+    case 83:  analogWrite(LEDR, 255); analogWrite(LEDG, 32); analogWrite(LEDB, 0);   break;
+    case 82:  analogWrite(LEDR, 255); analogWrite(LEDG, 40); analogWrite(LEDB, 0);   break;
+    case 81:  analogWrite(LEDR, 255); analogWrite(LEDG, 48); analogWrite(LEDB, 0);   break;
+    case 80:  analogWrite(LEDR, 255); analogWrite(LEDG, 56); analogWrite(LEDB, 0);   break;
+    case 79:  analogWrite(LEDR, 255); analogWrite(LEDG, 64); analogWrite(LEDB, 0);   break;
+    case 78:  analogWrite(LEDR, 255); analogWrite(LEDG, 80); analogWrite(LEDB, 0);   break;
+    case 77:  analogWrite(LEDR, 255); analogWrite(LEDG, 96); analogWrite(LEDB, 0);   break;
+    case 76:  analogWrite(LEDR, 255); analogWrite(LEDG, 112); analogWrite(LEDB, 0);   break;
+    case 75:  analogWrite(LEDR, 255); analogWrite(LEDG, 128); analogWrite(LEDB, 0);   break;
+    case 74:  analogWrite(LEDR, 255); analogWrite(LEDG, 144); analogWrite(LEDB, 0);   break;
+    case 73:  analogWrite(LEDR, 255); analogWrite(LEDG, 160); analogWrite(LEDB, 0);   break;
+    case 72:  analogWrite(LEDR, 255); analogWrite(LEDG, 178); analogWrite(LEDB, 0);   break;
+    case 71:  analogWrite(LEDR, 255); analogWrite(LEDG, 192); analogWrite(LEDB, 0);   break;
+    case 70:  analogWrite(LEDR, 240); analogWrite(LEDG, 192); analogWrite(LEDB, 0);   break;
+    case 69:  analogWrite(LEDR, 225); analogWrite(LEDG, 192); analogWrite(LEDB, 0);   break;
+    case 68:  analogWrite(LEDR, 209); analogWrite(LEDG, 192); analogWrite(LEDB, 0);   break;
+    case 67:  analogWrite(LEDR, 192); analogWrite(LEDG, 192); analogWrite(LEDB, 0);   break;
+    case 66:  analogWrite(LEDR, 186); analogWrite(LEDG, 196); analogWrite(LEDB, 0);   break;
+    case 65:  analogWrite(LEDR, 180); analogWrite(LEDG, 200); analogWrite(LEDB, 0);   break;
+    case 64:  analogWrite(LEDR, 174); analogWrite(LEDG, 204); analogWrite(LEDB, 0);   break;
+    case 63:  analogWrite(LEDR, 168); analogWrite(LEDG, 208); analogWrite(LEDB, 0);   break;
+    case 62:  analogWrite(LEDR, 162); analogWrite(LEDG, 212); analogWrite(LEDB, 0);   break;
+    case 61:  analogWrite(LEDR, 158); analogWrite(LEDG, 216); analogWrite(LEDB, 0);   break;
+    case 60:  analogWrite(LEDR, 152); analogWrite(LEDG, 220); analogWrite(LEDB, 0);   break;
+    case 59:  analogWrite(LEDR, 146); analogWrite(LEDG, 224); analogWrite(LEDB, 0);   break;
+    case 58:  analogWrite(LEDR, 139); analogWrite(LEDG, 228); analogWrite(LEDB, 0);   break;
+    case 57:  analogWrite(LEDR, 128); analogWrite(LEDG, 232); analogWrite(LEDB, 0);   break;
+    case 56:  analogWrite(LEDR, 110); analogWrite(LEDG, 236); analogWrite(LEDB, 0);   break;
+    case 55:  analogWrite(LEDR, 92); analogWrite(LEDG, 240); analogWrite(LEDB, 0);   break;
+    case 54:  analogWrite(LEDR, 74); analogWrite(LEDG, 243); analogWrite(LEDB, 0);   break;
+    case 53:  analogWrite(LEDR, 56); analogWrite(LEDG, 246); analogWrite(LEDB, 0);   break;
+    case 52:  analogWrite(LEDR, 37); analogWrite(LEDG, 249); analogWrite(LEDB, 0);   break;
+    case 51:  analogWrite(LEDR, 19); analogWrite(LEDG, 252); analogWrite(LEDB, 0);   break;
+    case 50:  analogWrite(LEDR, 0); analogWrite(LEDG, 255); analogWrite(LEDB, 0);   break;
+    case 49:  analogWrite(LEDR, 0); analogWrite(LEDG, 255); analogWrite(LEDB, 8);   break;
+    case 48:  analogWrite(LEDR, 0); analogWrite(LEDG, 255); analogWrite(LEDB, 16);   break;
+    case 47:  analogWrite(LEDR, 0); analogWrite(LEDG, 255); analogWrite(LEDB, 24);   break;
+    case 46:  analogWrite(LEDR, 0); analogWrite(LEDG, 255); analogWrite(LEDB, 32);   break;
+    case 45:  analogWrite(LEDR, 0); analogWrite(LEDG, 255); analogWrite(LEDB, 40);   break;
+    case 44:  analogWrite(LEDR, 2); analogWrite(LEDG, 255); analogWrite(LEDB, 48);   break;
+    case 43:  analogWrite(LEDR, 4); analogWrite(LEDG, 255); analogWrite(LEDB, 56);   break;
+    case 42:  analogWrite(LEDR, 8); analogWrite(LEDG, 255); analogWrite(LEDB, 64);   break;
+    case 41:  analogWrite(LEDR, 12); analogWrite(LEDG, 255); analogWrite(LEDB, 72);   break;
+    case 40:  analogWrite(LEDR, 16); analogWrite(LEDG, 255); analogWrite(LEDB, 80);   break;
+    case 39:  analogWrite(LEDR, 20); analogWrite(LEDG, 255); analogWrite(LEDB, 88);   break;
+    case 38:  analogWrite(LEDR, 24); analogWrite(LEDG, 255); analogWrite(LEDB, 96);   break;
+    case 37:  analogWrite(LEDR, 28); analogWrite(LEDG, 255); analogWrite(LEDB, 104);   break;
+    case 36:  analogWrite(LEDR, 32); analogWrite(LEDG, 255); analogWrite(LEDB, 112);   break;
+    case 35:  analogWrite(LEDR, 40); analogWrite(LEDG, 255); analogWrite(LEDB, 120);   break;
+    case 34:  analogWrite(LEDR, 48); analogWrite(LEDG, 255); analogWrite(LEDB, 128);   break;
+    case 33:  analogWrite(LEDR, 60); analogWrite(LEDG, 255); analogWrite(LEDB, 144);   break;
+    case 32:  analogWrite(LEDR, 72); analogWrite(LEDG, 255); analogWrite(LEDB, 162);   break;
+    case 31:  analogWrite(LEDR, 84); analogWrite(LEDG, 255); analogWrite(LEDB, 183);   break;
+    case 30:  analogWrite(LEDR, 96); analogWrite(LEDG, 255); analogWrite(LEDB, 204);   break;
+    case 29:  analogWrite(LEDR, 108); analogWrite(LEDG, 255); analogWrite(LEDB, 221);   break;
+    case 28:  analogWrite(LEDR, 120); analogWrite(LEDG, 255); analogWrite(LEDB, 238);   break;
+    case 27:  analogWrite(LEDR, 128); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 26:  analogWrite(LEDR, 138); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 25:  analogWrite(LEDR, 148); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 24:  analogWrite(LEDR, 159); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 23:  analogWrite(LEDR, 170); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 22:  analogWrite(LEDR, 182); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 21:  analogWrite(LEDR, 194); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 20:  analogWrite(LEDR, 206); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 19:  analogWrite(LEDR, 218); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 18:  analogWrite(LEDR, 230); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 17:  analogWrite(LEDR, 255); analogWrite(LEDG, 255); analogWrite(LEDB, 255);   break;
+    case 16:  analogWrite(LEDR, 255); analogWrite(LEDG, 240); analogWrite(LEDB, 255);   break;
+    case 15:  analogWrite(LEDR, 245); analogWrite(LEDG, 225); analogWrite(LEDB, 255);   break;
+    case 14:  analogWrite(LEDR, 230); analogWrite(LEDG, 210); analogWrite(LEDB, 255);   break;
+    case 13:  analogWrite(LEDR, 215); analogWrite(LEDG, 195); analogWrite(LEDB, 255);   break;
+    case 12:  analogWrite(LEDR, 200); analogWrite(LEDG, 180); analogWrite(LEDB, 255);   break;
+    case 11:  analogWrite(LEDR, 185); analogWrite(LEDG, 160); analogWrite(LEDB, 255);   break;
+    case 10:   analogWrite(LEDR, 160); analogWrite(LEDG, 140); analogWrite(LEDB, 255);   break;
+    case 9:   analogWrite(LEDR, 140); analogWrite(LEDG, 120); analogWrite(LEDB, 255);   break;
+    case 8:   analogWrite(LEDR, 110); analogWrite(LEDG, 100); analogWrite(LEDB, 255);   break;
+    case 7:   analogWrite(LEDR, 89); analogWrite(LEDG, 80); analogWrite(LEDB, 255);   break;
+    case 6:   analogWrite(LEDR, 68); analogWrite(LEDG, 60); analogWrite(LEDB, 255);   break;
+    case 5:    analogWrite(LEDR, 48); analogWrite(LEDG, 40); analogWrite(LEDB, 255);   break;
+    case 4:    analogWrite(LEDR, 32); analogWrite(LEDG, 20); analogWrite(LEDB, 255);   break;
+    case 3:    analogWrite(LEDR, 20); analogWrite(LEDG, 12); analogWrite(LEDB, 255);   break;
+    case 2:    analogWrite(LEDR, 12); analogWrite(LEDG, 5); analogWrite(LEDB, 255);   break;
+    case 1:    analogWrite(LEDR, 0); analogWrite(LEDG, 0); analogWrite(LEDB, 255);   break;
+    case 0:    analogWrite(LEDR, 1); analogWrite(LEDG, 1); analogWrite(LEDB, 1);   break;
+    default: break;
+  }
+}
+void LCDturnoff() {  //LCD turn off
+  lcd.noBacklight();
+  LCDbegin = 0;
+}
+void LCDturnon() {  //LCD turn on
+  digitalWrite(A3, HIGH);
+  digitalWrite(A2, LOW);
+  if (LCDbegin == 0) {
+    LCDbegin = 1;
+    lcd.begin(16, 2);
+  }
+  LCDlight = 1;
+  LCDbegin = 1;
+}
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(LEDR, OUTPUT);  //RGB LED
+  pinMode(LEDG, OUTPUT);
+  pinMode(LEDB, OUTPUT);
+  pinMode(LEDgnd, OUTPUT);
+  digitalWrite(LEDgnd, LOW);
+  LEDturnoff();
+  pinMode(Irrvcc, OUTPUT);  //Infrared remote
+  pinMode(Irrgnd, OUTPUT);
+  digitalWrite(Irrgnd, LOW);
+  digitalWrite(Irrvcc, HIGH);
+  irrecv.enableIRIn();
+  pinMode(DHTvcc, OUTPUT);  //DHT11
+  pinMode(DHTgnd, OUTPUT);
+  digitalWrite(DHTvcc, HIGH);
+  digitalWrite(DHTgnd, LOW);
+  pinMode(A3, OUTPUT);  //LCD
+  pinMode(A2, OUTPUT);
+  wdt_enable(WDTO_8S);   //看門狗 8秒
+}
+void loop() {
+  delay(50);
+  if (irrecv.decode(&results) ) {
+    if (results.value == irrcode) {
+      if (onoff == 0) {
+        onoff = 1;
+        LCDlight = 1;
+        LEDlight = 1;
+      } else {
+        onoff = 0;
+      }
+    }
+    else if (results.value == key_lcd && onoff == 1) {
+      if (LCDlight == 0) {
+        LCDlight = 1;
+        LCDturnon();
+      } else {
+        LCDlight = 0;
+        LCDturnoff();
+      }
+    }
+    else if (results.value == key_led && onoff == 1) {
+      if (LEDlight == 0) {
+        LEDlight = 1;
+        LEDturnon();
+      } else {
+        LEDlight = 0;
+        LEDturnoff();
+      }
+    }
+    irrecv.resume();
+  }
+  if (onoff == 1) {
+    if (LCDlight == 1) {
+      LCDturnon();
+    }
+    if (LEDlight == 1) {
+      LEDturnon();
+    }
+    dht11();
+  } else {
+    LEDturnoff();
+    LCDturnoff();
+  }
+  wdt_reset();  //看門狗重啟
+}
+
+void dht11() {
+  int chk = DHT11.read(DHT11PIN);
+  Serial.print("Read sensor: ");
+  switch (chk)  //檢驗是否正常運行
+  {
+    case 0: Serial.println("OK"); break;
+    case -1: Serial.println("Checksum error"); break;
+    case -2: Serial.println("Time out error"); break;
+    default: Serial.println("Unknown error"); break;
+  }
+  hum = DHT11.humidity;
+  tem = DHT11.temperature;
+  Serial.print("Humidity (%): ");  //濕度
+  Serial.println(hum);
+  Serial.print("Temperature (oC): ");   //溫度
+  Serial.println(tem);
+  lcd.setCursor(0, 0); // 設定游標位置在第一行行首
+  lcd.print("Humidity    ");
+  lcd.print((int)DHT11.humidity);
+  lcd.print(" %");
+  lcd.setCursor(0, 1);
+  lcd.print("Temperature ");
+  lcd.print((int)DHT11.temperature);
+  lcd.print((char) 0xDF);
+  lcd.print("C");
+  int i = 0;
+  while (i < dht11RefreshTime) {
+    if (irrecv.decode(&results)) {
+      if (results.value == irrcode) {
+        Serial.println("Turn off!");
+        break;
+      } else if (results.value == key_lcd) {
+        Serial.println("LCD turn off");
+        break;
+      } else if (results.value == key_led) {
+        Serial.println("LED turn off");
+        break;
+      }
+    } else {
+      delay(30);
+      i = i + 30;
+    }
+  }
+}
+
